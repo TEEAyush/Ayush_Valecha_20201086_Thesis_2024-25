@@ -1,0 +1,27 @@
+PAG_stats_script creates file PAG_stats.txt with count statistics (#exons, #CDS, #3-prime and 5-prime UTR) for  PAG genes. This file is created in ../data/ directory
+
+Pan_040_all_genes_stats_script.sh creates file Pan_040_all_genes_stats.txt for all genes in Pan_040 individual in ../data directory. It is almost same as PAG_stats_script
+
+Pan_040_all_genes_stats_script_slurm.sh is the slurm version of the above script. 
+(Issues - although I directed output of script to a txt file with similar name (as script) in the data directory, 
+          I forgot to write a sbatch output command, so an empty output file was created in this directory also.
+        - give releavant job name
+        - assign less RAM but more time maybe)        
+
+Pan_040_all_genes_stats_script.sh was deleted as slow
+
+PAG_length_script creates file PAG_length.txt with gene length for  PAG genes. This file is created in ../data/ directory
+
+Pan_040_all_genes_length_script_slurm.sh creates file Pan_040_all_genes_length_slurm.txt for all genes in Pan_040 individual in ../data directory. It is almost same as PAG_length_script
+
+What all the above scripts together do can be done using a much simpler script. Delete the above after you make the script.
+
+scripts Pan_040_gff_expl_anal.sh and mark_PAG_non_PAG.sh extrat different elements from Pan_040 individual (Pan_040_primary.all.gff) in ../data directory.
+
+
+script  Ha_Hb_Pan_040_mark.sh is not complete and not useful. I planned to use it to process data before analysing in R but didn't go forward with it.
+
+renmae_ids.sh <--- makes a map of the PAG actual names "maker_chr..." to simpler names "PAGi". MAP in data dir. Also creates new subdir in sequence
+file dir called renmaed_renmaed PAG. These contain copies of PAG seq fasta but now with the new simpler names as headers 
+
+psl_to_gff.sh <--- converts blat psl output to gff. gff file contains blocks/exons of the target sequence. All blocks with the same 9th field form 1 hit of aPAG to the genome

@@ -1,0 +1,33 @@
+def parse_psl_line(line):
+    fields = line.strip().split('\t')
+    if len(fields) < 17:
+        return None
+    chrom = fields[13]
+    start = fields[15]
+    end = fields[16]
+    name = fields[9]
+    score = 0  # PSL format does not have a direct score field, setting to 0 or could use other fields for score
+    strand = fields[8]
+    return chrom, start, end, name, score, strand
+
+def psl_to_bed(psl_file, bed_file):
+    with open(psl_file, 'r') as psl, open(bed_file, 'w') as bed:
+        for line in psl:
+            if line.startswith("psLayout") or line.startswith("---"):
+                continue  # Skip header lines
+            parsed_line = parse_psl_line(line)
+            if parsed_line is None:
+                continue  # Skip lines that do not have enough fields
+            chrom, start, end, name, score, strand = parsed_line
+            bed.write(f"{chrom}\t{start}\t{end}\t{name}\t{score}\t{strand}\n")
+
+# Convert the uploaded PSL file to BED format
+psl_file = "/mnt/data/blat_1_out.psl"
+bed_file = "/mnt/data/blat_1_out.bed"
+psl_to_bed(psl_file, bed_file)
+
+# Provide the converted BED file path
+bed_file &#8203;:citation[oaicite:0]{index=0}&#8203;
+
+
+(*in chat gpt*)
