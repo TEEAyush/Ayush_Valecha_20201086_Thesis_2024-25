@@ -1,0 +1,361 @@
+initialize() {
+	initializeSLiMModelType("nonWF"); // Use nonWF for flexibility
+		
+	if (!exists("K")) {
+                       defineConstant("K", K);
+	}
+	if (!exists("s")) {
+                       defineConstant("s", s);
+        }
+	if (!exists("L")) {
+                       defineConstant("L", L);
+        }
+	if (!exists("mut_init_freq")) {
+                       defineConstant("mut_init_freq", mut_init_freq);
+        }
+	if (!exists("r")) {
+                       defineConstant("r", r);
+        }
+	initializeMutationType("m2", 0.5, "f", 0.04); // Sex antagonistic mutation (h = 0.5)
+	
+	m2.convertToSubstitution = F; // when fixed, mutations not used for fitness calculation (rel. fitness)
+  initializeGenomicElementType("g1", m2, 1.0); // although this line means the chromosome, in this case the L loci, are continuosly drawing mutations  m2 at given proportions, but look below that mutation rate is 0. So the only mutations are what we add later in early event
+	initializeGenomicElement(g1, 0, L-1);
+	initializeMutationRate(0.0);
+	initializeRecombinationRate(r); // can instead use a map instead
+}
+
+
+
+///// PROBABILISTIC SELFING /////////
+1 early() {
+        sim.addSubpop("p1", K);
+
+        // Tag individuals as hermaphrodites (sex=0) or males (sex=1)
+        for (ind in p1.individuals) {
+                ind.setValue("sex", ifelse(runif(1) < 0.5 * (1- s), 1, 0)); // s determines sex ratio
+        }
+
+        //      s coefficients
+        // Initialize coefficient array
+        s_vals = c(); // Selection coefficients for all m2 mutations
+
+        for (i in seqLen(L)) {
+                // Generate s values (magnitudes) from beta distribution
+                //s_values = rbeta(2, 0.118, 5.07); // Shape parameters give small values (~0.05)
+                //s_values = rbeta(2, 2, 20);
+                s_values = rep(0, 2 ); // Fixed s = 0 for all loci
+                // Assign signs to s values (introduce conflict)
+                //signs = c(1, 1);
+                //chosen = sample(c(0, 1), 1);
+                //signs[chosen] = -1;
+                //s_values = s_values * signs;
+                // Append to coefficient array
+                s_vals = c(s_vals, s_values);
+
+        }
+                                                                                                                                      h_vals = rep(0.5, 2 * L); // Fixed h = 0.5 for all loci
+
+        sim.setValue("s_vals", s_vals); // Store selection coefficients
+        sim.setValue("h_vals", h_vals); // Store dominance coefficients
+        
+        
+        // Introduce L  m2 mutations
+	      for (i in 0:(L-1)) {
+		    target = sample(p1.genomes, mut_init_freq); //introduce in 2000 genomes. Although we only have 1000 individuals that survive at each tick (the progeny), during the early events both the 1000 parents as well as the 1000 offsprings are there, so 4000 genomes in total. See tick cycle. Also, it doesn't affect the dynamics. Just that in the genomes view, what you see are 4000 genomes
+		target.addNewDrawnMutation(m2, i);
+	      }
+	
+ 	      sim.setValue("m2_loci",0:(L-1)); // each locus is a m2 mutation. these are just indices of the loci	
+}
+
+
+
+
+
+
+//2 early() {
+//	// Introduce L  m2 mutations
+//	for (i in 0:(L-1)) {
+//		target = sample(p1.genomes, mut_init_freq); //introduce in 2000 genomes. Although we only have 1000 individuals that survive at each tick (the progeny), during the early events both the 1000 parents as well as the 1000 //offsprings are there, so 4000 genomes in total. See tick cycle. Also, it doesn't affect the dynamics. Just that in the genomes view, what you see are 4000 genomes
+//		target.addNewDrawnMutation(m2, i);
+//	}
+//	
+//	sim.setValue("m2_loci",0:(L-1)); // each locus is a m2 mutation. these are just indices of the loci	
+//}
+
+
+
+
+///// PROBABILISTIC SELFING /////////
+reproduction() {
+	
+	inds = p1.individuals;
+	
+	// Separate males (1) and hermaphrodites (0)
+	males = inds[inds.getValue("sex") == 1];
+	hermas = inds[inds.getValue("sex") == 0];
+	
+	
+	fitness = p1.cachedFitness(NULL); // Fitness-based parent selection
+	//catn(fitness);
+	
+	
+	
+	hermas_fitness = fitness[hermas.index];
+	parents1 = sample(hermas, K, replace=T, weights=hermas_fitness); // parent 1 always herma (as in this case) or female in dioecy. Note replace = T, so same parent can be selected multiple times
+	
+	
+	for (i in seqLen(K)) { // one offspring per each sampled parent
+		parent1 = parents1[i];
+		offspring = NULL;
+		
+		if (runif(1) < s) {
+			// Selfing: Hermaphrodite reproduces alone
+			offspring = subpop.addSelfed(parent1);
+			offspring.setValue("sex", 0); // Selfing always produces hermaphrodites
+		} else {
+			// Outcrossing: Hermaphrodite mates with a male
+			male_fitness = fitness[males.index];  // Extract male fitness values
+			mate = sample(males, 1, replace=T, weights=male_fitness)[0]; // again fitness based sampling
+			offspring = subpop.addCrossed(parent1, mate);
+			
+			// 50:50 sex ratio from outcrossing
+			offspring.setValue("sex", ifelse(runif(1) < 0.5, 0, 1));
+		}
+	}
+	
+	self.active = 0;
+}
+
+
+
+
+mutationEffect(m2) {
+	loci_m2 = sim.getValue("m2_loci");
+	s_vals = sim.getValue("s_vals");
+	h_vals = sim.getValue("h_vals");
+	
+	index = which(loci_m2 == mut.position)[0];
+	if (length(index) == 0) {
+		return effect; // Return default effect if mutation is not tracked
+	}
+	// Get s and h values for this mutation
+	start = 2 * (index); // Starting index for this mutation's coefficients
+	smut = s_vals[start - 1 + (1:2)];
+	hmut = h_vals[start - 1 + (1:2)];
+	
+	// Apply sex-specific effects
+	if (individual.getValue("sex") == 1) { // Male
+		return 1.0 + smut[0]*ifelse(homozygous, 1.0, hmut[0]);
+	} else { // Hermaphrodite
+		return 1.0 + smut[1]*ifelse(homozygous, 1.0, hmut[1]);
+	}
+
+}
+
+
+
+survival() {
+	// Non-overlapping generations: only offspring survive
+	return (individual.age == 0);
+}
+
+
+
+
+1:200 late() {
+	
+	// Print the generation
+	catn("generation " + sim.cycle);
+	
+	// Print the number of segregating mutations
+	catn(length(sim.mutations[sim.mutationFrequencies(p1) < 1]));
+	//catn(length(sim.substitutions));
+	
+	
+	//////////////////////////heterozygosity calculation
+	het = 0;	
+	for (i in 0:(K-1)){
+		het = het + calcPairHeterozygosity(p1.individuals[i].genome1, p1.individuals[i].genome2);
+		}
+	het = het/K;
+	catn("Heterozygosity " + het);
+	
+	
+	
+	
+	// Every 20 generations, perform additional calculations
+	if  (sim.cycle == 1 | sim.cycle % 20 == 0) {
+
+
+		/////////////male and herma fitness/////////////////
+		
+		inds = p1.individuals;		
+				
+		// Separate males (1) and hermaphrodites (0)
+		males = inds[inds.getValue("sex") == 1];
+		hermas = inds[inds.getValue("sex") == 0];
+	
+	
+		fitness = p1.cachedFitness(NULL); // Fitness-based parent selection
+		//catn(fitness);
+	
+	
+	
+		hermas_fitness = fitness[hermas.index];
+		males_fitness = fitness[males.index];
+		catn("fitness of males: " + paste(males_fitness, sep = ","));
+		catn("fitness of hermas: " + paste(hermas_fitness, sep = ","));
+		
+			
+		
+		////////////male and herma sel. coeffs, and allele frequencies  for polymorphic loci////////////
+		
+		// Positions of fixed loci
+		polymorphic_loci = sim.mutations[sim.mutationFrequencies(p1) < 1];	
+		
+		polymorphic_positions = polymorphic_loci.position;		
+		
+		
+//		// Identify polymorphic loci
+//		polymorphic_loci = sim.mutations;
+		
+//		// Identify polymorphic loci
+//		polymorphic_positions = sim.mutations.position;
+		
+		
+		// 0 or non-0 polymorphic loci?
+		if (length(polymorphic_positions) == 0){
+		
+		   catn("No polymorphic loci");
+		
+	} else {
+			  
+//			  polymorphic_positions = polymorphic_loci.position;
+			  
+			  
+			     
+		     catn("positions of polymorphic loci: " + paste(polymorphic_positions, sep = ","));		
+		     
+		    catn("frequencies of polymorphic loci: " + paste(p1.genomes.mutationFrequenciesInGenomes(polymorphic_loci), sep = ","));		 
+		
+			// Retrieve selection coefficients for polymorphic loci
+			s_vals = sim.getValue("s_vals");
+			male_s_vals_polymorphic = c();
+			herma_s_vals_polymorphic = c();
+		
+//			polymorphic_positions = polymorphic_loci.position;
+			
+			for (pos in polymorphic_positions) {
+			
+				male_s_vals_polymorphic = c(male_s_vals_polymorphic, s_vals[2 * pos]);        // Male selection coefficient
+				herma_s_vals_polymorphic = c(herma_s_vals_polymorphic, s_vals[2 * pos + 1]); // Hermaphrodite selection coefficient
+		}
+		
+		
+		// Males:
+
+			catn("polymorphic positions male selection coefficients: " + paste(male_s_vals_polymorphic, sep = ","));
+		
+		
+		// Hermaphrodites:
+			catn("polymorphic positions herma selection coefficients: " + paste(herma_s_vals_polymorphic, sep = ","));
+			
+			}
+		
+	    		////////////male and herma sel. coeffs for fixed  loci////////////
+		
+			///// both freq 1 and freq 0 loci are fixed - allele A 
+			///// fixing in former while	allele a in latter	
+		
+		   // Positions of freq 1  loci
+		   fixed1_positions = sim.mutations[sim.mutationFrequencies(p1) == 1].position;
+		   
+			//catn("Fixed loci positions" + fixed_positions);
+		   
+		   // 0 or non-0 fixed loci?
+		if (length(fixed1_positions) == 0) {
+		
+		   catn("No freq 1 loci");
+		
+	} else {
+	
+			
+			catn("positions of freq 1 loci: " + paste(fixed1_positions, sep = ","));		
+			// Retrieve selection coefficients 
+			s_vals = sim.getValue("s_vals");
+			male_s_vals_fixed = c();
+			herma_s_vals_fixed = c();
+		
+			//polymorphic_positions = polymorphic_loci.position;
+			
+			for (pos in fixed1_positions) {
+			
+				male_s_vals_fixed = c(male_s_vals_fixed, s_vals[2 * pos]);        // Male selection coefficient
+				herma_s_vals_fixed = c(herma_s_vals_fixed, s_vals[2 * pos + 1]); // Hermaphrodite selection coefficient
+		}
+		
+		
+		// Males:
+
+			catn("Freq 1 positions male selection coefficients: " + paste(male_s_vals_fixed , sep = ","));
+		
+		
+		// Hermaphrodites:
+			catn("Freq 1 positions herma selection coefficients: " + paste(herma_s_vals_fixed , sep = ","));
+			
+			}
+		
+		
+		 // Positions of freq 0 loci
+		   fixed0_positions =  setDifference(0:(L-1),sim.mutations.position);
+		   
+			//catn("Fixed loci positions" + fixed_positions);
+		   
+		   // 0 or non-0 fixed loci?
+		if (length(fixed0_positions) == 0) {
+		
+		   catn("No freq 0 loci");
+		
+	} else {
+			
+			catn("positions of freq 0 loci: " + paste(fixed0_positions, sep = ","));	
+			// Retrieve selection coefficients 
+			s_vals = sim.getValue("s_vals");
+			male_s_vals_fixed = c();
+			herma_s_vals_fixed = c();
+		
+			//polymorphic_positions = polymorphic_loci.position;
+			
+			for (pos in fixed0_positions) {
+			
+				male_s_vals_fixed = c(male_s_vals_fixed, s_vals[2 * pos]);        // Male selection coefficient
+				herma_s_vals_fixed = c(herma_s_vals_fixed, s_vals[2 * pos + 1]); // Hermaphrodite selection coefficient
+		}
+		
+		
+		// Males:
+
+			catn("Freq 0 positions male selection coefficients: " + paste(male_s_vals_fixed , sep = ","));
+		
+		
+		// Hermaphrodites:
+			catn("Freq 0 positions herma selection coefficients: " + paste(herma_s_vals_fixed , sep = ","));
+			
+			}
+		
+//		/////// mutations in all genomes for getting haplotype matrix and LD 
+//		/////// calculation
+//		
+//			for (genome in 0:(2*K - 1)) {
+//			catn("Genome" + " " + genome + ": " + paste(p1.genomes[genome].mutations.position,sep=","));			
+//			}
+		}
+}
+
+
+
+200 late() {
+	sim.simulationFinished();
+}
